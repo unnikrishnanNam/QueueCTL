@@ -13,6 +13,6 @@ import picocli.CommandLine.Command;
 public class QueueCtlCommand implements Runnable {
     @Override
     public void run() {
-        System.out.println("QueueCTL CLI. Use --help for usage.");
+        System.out.println("Welcome to QueueCTL CLI. Use --help for usage.");
     }
 }
