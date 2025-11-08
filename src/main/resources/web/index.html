@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>QueueCTL • Dashboard</title>
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <link rel="stylesheet" href="/assets/style.css" />
+  </head>
+  <body>
+    <div class="layout">
+      <aside class="sidebar">
+        <div class="nav-logo"><span>QC</span> QueueCTL</div>
+        <div class="nav-section">Navigation</div>
+        <nav>
+          <ul class="nav-links">
+            <li><a class="active" href="/">Dashboard</a></li>
+            <li><a href="/jobs">Jobs & Workers</a></li>
+            <li><a href="/logs">Logs</a></li>
+            <li><a href="/config">Config</a></li>
+          </ul>
+        </nav>
+      </aside>
+      <main>
+        <div class="topbar">
+          <h1>Dashboard</h1>
+          <div style="font-size: 0.7rem; opacity: 0.6">Real-time telemetry</div>
+        </div>
+        <div class="content">
+          <div class="grid grid-cols-4">
+            <div class="card">
+              <h2>Pending</h2>
+              <div class="metric">
+                <div class="icon" style="background: hsl(var(--warn))">🕗</div>
+                <div>
+                  <strong id="mPending">0</strong><span>Jobs pending</span>
+                </div>
+              </div>
+            </div>
+            <div class="card">
+              <h2>Processing</h2>
+              <div class="metric">
+                <div class="icon" style="background: hsl(var(--purple))">
+                  ⚙️
+                </div>
+                <div>
+                  <strong id="mProcessing">0</strong
+                  ><span>Jobs processing</span>
+                </div>
+              </div>
+            </div>
+            <div class="card">
+              <h2>Completed</h2>
+              <div class="metric">
+                <div class="icon" style="background: hsl(var(--ok))">✅</div>
+                <div>
+                  <strong id="mCompleted">0</strong><span>Jobs completed</span>
+                </div>
+              </div>
+            </div>
+            <div class="card">
+              <h2>Dead</h2>
+              <div class="metric">
+                <div class="icon" style="background: hsl(var(--danger))">
+                  💀
+                </div>
+                <div><strong id="mDead">0</strong><span>DLQ / Dead</span></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="grid" style="margin-top: 1rem">
+            <div class="card">
+              <h2>Workers</h2>
+              <div class="grid grid-cols-3">
+                <div class="metric">
+                  <strong id="mIdle">0</strong><span>Workers idle</span>
+                </div>
+                <div class="metric">
+                  <strong id="mBusy">0</strong><span>Workers busy</span>
+                </div>
+                <div class="metric">
+                  <strong id="mTotal">0</strong><span>Total workers</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <!-- footer intentionally minimal (branding removed per request) -->
+      </main>
+    </div>
+    <script src="/assets/app.js"></script>
+    <script>
+      const yearEl = qs("#year");
+      if (yearEl) yearEl.textContent = new Date().getFullYear();
+      async function refresh() {
+        try {
+          const s = await fetchJSON("/api/status");
+          const st = s.states || {};
+          qs("#mPending").textContent = st.PENDING ?? 0;
+          qs("#mProcessing").textContent = st.PROCESSING ?? 0;
+          qs("#mCompleted").textContent = st.COMPLETED ?? 0;
+          qs("#mDead").textContent = st.DEAD ?? 0;
+          const idle = s.workers?.idle ?? 0;
+          const busy = s.workers?.busy ?? 0;
+          qs("#mIdle").textContent = idle;
+          qs("#mBusy").textContent = busy;
+          qs("#mTotal").textContent = idle + busy;
+        } catch (e) {
+          console.error("status refresh failed", e);
+        }
+      }
+      refresh();
+      setInterval(refresh, 2000);
+    </script>
+  </body>
+</html>

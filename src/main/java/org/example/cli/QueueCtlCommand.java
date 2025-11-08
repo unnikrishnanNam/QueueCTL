@@ -8,7 +8,8 @@ import picocli.CommandLine.Command;
         StatusCommand.class,
         ListCommand.class,
         DlqCommand.class,
-        ConfigCommand.class
+        ConfigCommand.class,
+        WebServerCommand.class
 })
 public class QueueCtlCommand implements Runnable {
     @Override

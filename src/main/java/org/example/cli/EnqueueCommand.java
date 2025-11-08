@@ -37,10 +37,12 @@ public class EnqueueCommand implements Runnable {
         int backoff = configRepository.getInt("backoff_base", 2);
         int defaultRetries = configRepository.getInt("max_retries", 3);
         int defaultTimeout = configRepository.getInt("timeout_default", 0);
+        int defaultPriority = configRepository.getInt("priority_default", 1);
         JobRepository repo = new JobRepository(backoff);
         String jobId = id == null || id.isBlank() ? UUID.randomUUID().toString() : id;
         int mr = (maxRetries == null ? defaultRetries : maxRetries);
-        Job job = new Job(jobId, command, mr, priority);
+        int prio = (priority == null ? defaultPriority : priority);
+        Job job = new Job(jobId, command, mr, prio);
         // timeout
         job.setTimeoutSeconds(timeoutSeconds != null ? timeoutSeconds : defaultTimeout);
         // parse run_at schedule

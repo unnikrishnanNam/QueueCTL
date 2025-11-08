@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>QueueCTL • Logs</title>
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <link rel="stylesheet" href="/assets/style.css" />
+  </head>
+  <body>
+    <div class="layout">
+      <aside class="sidebar">
+        <div class="nav-logo"><span>QC</span> QueueCTL</div>
+        <div class="nav-section">Navigation</div>
+        <nav>
+          <ul class="nav-links">
+            <li><a href="/">Dashboard</a></li>
+            <li><a href="/jobs">Jobs & Workers</a></li>
+            <li><a class="active" href="/logs">Logs</a></li>
+            <li><a href="/config">Config</a></li>
+          </ul>
+        </nav>
+      </aside>
+      <main>
+        <div class="topbar"><h1>Logs</h1></div>
+        <div class="content">
+          <div class="card">
+            <h2>Tail logs</h2>
+            <form class="inline" id="logForm">
+              <input type="text" id="wid" placeholder="Worker ID (optional)" />
+              <input type="number" id="lines" placeholder="Lines" value="200" />
+              <button type="submit">Load</button>
+            </form>
+            <div id="logs" style="margin-top: 1rem"></div>
+          </div>
+        </div>
+        <!-- footer intentionally removed -->
+      </main>
+    </div>
+    <script src="/assets/app.js"></script>
+    <script>
+      async function load() {
+        const wid = qs("#wid").value.trim();
+        const n = qs("#lines").value || 100;
+        const url =
+          "/api/logs?n=" +
+          encodeURIComponent(n) +
+          (wid ? "&worker=" + encodeURIComponent(wid) : "");
+        const data = await fetchJSON(url);
+        qs("#logs").innerHTML = data
+          .map((d) => {
+            const lines = d.lines
+              .map(
+                (x, i) =>
+                  `<span style='opacity:.5'>${(i + 1)
+                    .toString()
+                    .padStart(3, " ")}</span>  ${String(x).replace(
+                    /</g,
+                    "&lt;"
+                  )}`
+              )
+              .join("\n");
+            return `<div class='log-block'><h3 style='margin:0 0 .3rem;font-size:.75rem;opacity:.8'>${d.worker}</h3><div class='table-wrapper' style='margin:0'><pre>${lines}</pre></div></div>`;
+          })
+          .join("");
+      }
+      qs("#logForm").addEventListener("submit", (e) => {
+        e.preventDefault();
+        load();
+      });
+      qs("#wid").addEventListener("change", load);
+      load();
+      setInterval(load, 8000);
+    </script>
+  </body>
+</html>

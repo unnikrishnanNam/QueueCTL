@@ -41,4 +41,20 @@ public class ConfigRepository {
             return defaultValue;
         }
     }
+
+    public java.util.Map<String, String> listAll() {
+        Database.init();
+        String sql = "SELECT key, value FROM config ORDER BY key";
+        java.util.Map<String, String> m = new java.util.LinkedHashMap<>();
+        try (Connection c = Database.getConnection(); PreparedStatement ps = c.prepareStatement(sql)) {
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    m.put(rs.getString(1), rs.getString(2));
+                }
+            }
+        } catch (SQLException e) {
+            throw new RuntimeException("Failed to list config", e);
+        }
+        return m;
+    }
 }

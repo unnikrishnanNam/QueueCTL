@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>QueueCTL • Config</title>
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <link rel="stylesheet" href="/assets/style.css" />
+  </head>
+  <body>
+    <div class="layout">
+      <aside class="sidebar">
+        <div class="nav-logo"><span>QC</span> QueueCTL</div>
+        <div class="nav-section">Navigation</div>
+        <nav>
+          <ul class="nav-links">
+            <li><a href="/">Dashboard</a></li>
+            <li><a href="/jobs">Jobs & Workers</a></li>
+            <li><a href="/logs">Logs</a></li>
+            <li><a class="active" href="/config">Config</a></li>
+          </ul>
+        </nav>
+      </aside>
+      <main>
+        <div class="topbar"><h1>Configuration</h1></div>
+        <div class="content">
+          <div class="card">
+            <h2>Configuration Overview</h2>
+            <p
+              style="
+                font-size: 0.7rem;
+                opacity: 0.7;
+                margin-top: -0.3rem;
+                margin-bottom: 0.9rem;
+              "
+            >
+              These settings influence default behavior for enqueued jobs and
+              workers.
+            </p>
+            <div class="table-wrapper" style="max-height: 420px">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Key</th>
+                    <th>Current Value</th>
+                    <th>Default Value</th>
+                    <th>Description</th>
+                    <th>Update</th>
+                  </tr>
+                </thead>
+                <tbody id="configBody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        <!-- footer removed -->
+      </main>
+    </div>
+    <script src="/assets/app.js"></script>
+    <script>
+      const KNOWN_CONFIG = [
+        {
+          key: "backoff_base",
+          def: "2",
+          desc: "Base for exponential retry backoff (delay = base^attempts seconds)",
+        },
+        {
+          key: "max_retries",
+          def: "3",
+          desc: "Default maximum retries per job",
+        },
+        {
+          key: "timeout_default",
+          def: "0",
+          desc: "Default timeout (seconds) for jobs (0 = none)",
+        },
+        {
+          key: "priority_default",
+          def: "1",
+          desc: "Default priority for new jobs (higher = picked sooner)",
+        },
+      ];
+      async function loadConfig() {
+        const data = await fetchJSON("/api/config/list");
+        qs("#configBody").innerHTML = KNOWN_CONFIG.map((c) => {
+          const cur = data[c.key] ?? c.def;
+          return `<tr>
+      <td>${c.key}</td>
+      <td><code>${cur}</code></td>
+      <td><code>${c.def}</code></td>
+      <td style='white-space:normal;max-width:360px'>${c.desc}</td>
+      <td><form data-key='${c.key}' class='inline cfgUpdate'><input type='text' name='val' placeholder='new value' style='width:90px'/> <button>Save</button></form></td>
+    </tr>`;
+        }).join("");
+        qsa("form.cfgUpdate").forEach((f) => {
+          f.addEventListener("submit", async (e) => {
+            e.preventDefault();
+            const k = f.getAttribute("data-key");
+            const v = f.querySelector("input[name=val]").value.trim();
+            if (!v) return;
+            try {
+              await fetchJSON(
+                "/api/config/set?key=" +
+                  encodeURIComponent(k) +
+                  "&value=" +
+                  encodeURIComponent(v),
+                { method: "POST" }
+              );
+              f.querySelector("input[name=val]").value = "";
+              await loadConfig();
+            } catch (err) {
+              alert("Failed to save " + k + ": " + err.message);
+            }
+          });
+        });
+      }
+      loadConfig();
+    </script>
+  </body>
+</html>

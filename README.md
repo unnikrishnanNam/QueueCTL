@@ -1,115 +1,145 @@
+<div align="center">
+
 # QueueCTL
 
-CLI-based background job queue with SQLite persistence, multiple workers, retries with exponential backoff, and a Dead Letter Queue (DLQ).
+Small, sharp, and reliable. A pragmatic job queue you can run anywhere.
 
-## Features
+— ship shell commands as background jobs; keep the logs; sleep well.
 
-- Enqueue shell commands as jobs (echo, sleep, bash, etc.)
-- Multiple foreground workers run in parallel (threads)
-- Atomic job claiming (no duplicate processing)
-- Exponential backoff retries and DLQ after max retries
-- Persistent storage in SQLite (embedded)
-- Configurable defaults via `queuectl config`
+</div>
 
-## Requirements
+---
 
-- Java 21+
-- Maven 3.9+
+## What is this?
 
-## Build
+QueueCTL is a CLI-first background job queue backed by SQLite with:
 
-```
+- Atomic job claiming (no double processing)
+- Multiple workers on virtual threads for high concurrency with low footprint
+- Exponential backoff retries and a clear Dead Letter Queue (DLQ)
+- Scheduling (run_at) and per-job timeouts
+- Always-on persistence under `~/.queuectl/`
+- Optional web dashboard (embedded HTTP server) for live metrics, jobs, workers, and logs
+
+Use it to offload long-running or failure-prone tasks, batch jobs, or small automation pipelines without dragging in a whole message broker.
+
+## Why use QueueCTL?
+
+- It’s portable: a single shaded JAR, zero external services.
+- It’s disciplined: SQL-first, simple schema, deterministic behavior.
+- It’s efficient: workers run on Java 21 virtual threads; idle costs are near-zero.
+- It’s observable: per-worker log files, CLI status, and an optional web UI.
+- It’s pragmatic: the happy path “just works,” failure paths are first-class.
+
+## What we optimized for
+
+- Virtual threads: each worker runs on `Thread.ofVirtual()`, letting you scale worker counts without burning OS threads.
+- SQLite with sane defaults: durable writes, a 5s busy timeout, and compact schema. Atomic UPDATE-based claiming ensures correctness without heavyweight locks.
+- Exponential backoff that won’t wake the world: delay = base^attempts with configurable base.
+- Scheduling built in: `--run_at` accepts ISO-8601, epoch seconds, or relative `+5s`/`+2m`/`+1h`.
+- Timeouts enforced in the worker: no job runs forever.
+- Practical web UI: self-hosted, no Node build step. Start/stop from the CLI.
+
+## Install
+
+### Option A: JAR
+
+Requirements: Java 21+, Maven 3.9+
+
+```bash
+# Build the shaded JAR
 mvn -DskipTests package
+
+# Run a quick smoke test
+java -jar target/QueueCTL-1.0-SNAPSHOT-shaded.jar status
 ```
 
-Output fat JAR: `target/QueueCTL-1.0-SNAPSHOT.jar`.
+### Option B: Docker
 
-## Quick start
+```bash
+# Build the image
+docker build -t queuectl:latest .
 
-```
-# Configure retry/backoff defaults (optional)
-java -jar target/QueueCTL-1.0-SNAPSHOT.jar config set max_retries 3
-java -jar target/QueueCTL-1.0-SNAPSHOT.jar config set backoff_base 2
+# Run it with a persistent data directory
+mkdir -p ./queuectl-data
+# Example: show status
+docker run --rm -v $(pwd)/queuectl-data:/data queuectl:latest status
 
 # Enqueue a job
-java -jar target/QueueCTL-1.0-SNAPSHOT.jar enqueue --command "echo hello" --id job1
+docker run --rm -v $(pwd)/queuectl-data:/data queuectl:latest enqueue --command "echo from docker" --id d1
 
-# Start 2 workers (foreground, Ctrl+C to stop)
-java -jar target/QueueCTL-1.0-SNAPSHOT.jar worker start --count 2
-
-# Show status and list jobs
-java -jar target/QueueCTL-1.0-SNAPSHOT.jar status
-java -jar target/QueueCTL-1.0-SNAPSHOT.jar list --state COMPLETED
-
-# Fail a job and watch retries -> DLQ
-java -jar target/QueueCTL-1.0-SNAPSHOT.jar enqueue --command "bash -lc 'exit 1'" --id fail1 --max_retries 2
-java -jar target/QueueCTL-1.0-SNAPSHOT.jar worker start --count 1
-java -jar target/QueueCTL-1.0-SNAPSHOT.jar dlq list
-java -jar target/QueueCTL-1.0-SNAPSHOT.jar dlq retry fail1
+# Start workers (foreground in container)
+docker run --rm -v $(pwd)/queuectl-data:/data queuectl:latest worker start --count 2
 ```
 
-## CLI reference
+Tip: the container uses `-Duser.home=/data` and exposes 8080; you can optionally run the web UI inside the container and publish that port.
 
-- `enqueue` — Add a new job
-  - `--id` optional (UUID auto-generated if omitted)
-  - `--command` required
-  - `--max_retries` optional (falls back to `config max_retries` or 3)
-  - `--priority` optional (default 1)
-- `worker start --count N` — Start N workers in the foreground (Ctrl+C to stop)
-- `status` — Counts per job state and number of busy workers
-- `list [--state STATE]` — List jobs by state (PENDING, PROCESSING, COMPLETED, FAILED, DEAD)
-- `dlq list` — List DLQ jobs
-- `dlq retry <jobId>` — Move a DLQ job back to PENDING and reset attempts
-- `config set <key> <value>` — Set config (`max_retries`, `backoff_base`)
-- `config get <key>` — Get config value
-
-## Architecture overview
-
-- Storage: SQLite file at `~/.queuectl/queuectl.db`
-- Tables:
-  - `jobs(id, command, state, attempts, max_retries, created_at, updated_at, available_at, last_error, output, priority, locked_by, locked_at)`
-  - `config(key PRIMARY KEY, value)`
-- Locking: workers claim one job via single `UPDATE ... WHERE id = (SELECT id FROM jobs WHERE state='PENDING' AND available_at <= now ORDER BY priority DESC, created_at LIMIT 1)` to move it to `PROCESSING` and stamp `locked_by/locked_at`.
-- Retry: on non-zero exit, attempts++, if attempts > max_retries ⇒ `DEAD` else `PENDING` with `available_at = now + backoff_base^attempts`.
-- Worker: executes command via `/bin/sh -c` and captures stdout/stderr; foreground threads; graceful shutdown on SIGINT.
-
-## Assumptions & trade-offs
-
-- Foreground worker only (no daemonization). Background mode can be added later.
-- Backoff cap not implemented yet (kept simple by request).
-- `FAILED` state reserved; normal flow is PENDING → PROCESSING → COMPLETED or DEAD (after retries). Some systems keep transient `FAILED`, we update directly back to PENDING for retries.
-- Status uses `PROCESSING` rows to estimate active (busy) workers; idle workers aren’t counted.
-
-## Testing
-
-Minimal manual test flow:
+## Usage (CLI)
 
 ```
-# 1) Success
-java -jar target/QueueCTL-1.0-SNAPSHOT.jar enqueue --command "echo ok" --id ok1
-java -jar target/QueueCTL-1.0-SNAPSHOT.jar worker start --count 1
-java -jar target/QueueCTL-1.0-SNAPSHOT.jar list --state COMPLETED
+# Configure defaults
+java -jar target/QueueCTL-1.0-SNAPSHOT-shaded.jar config set max_retries 3
+java -jar target/QueueCTL-1.0-SNAPSHOT-shaded.jar config set backoff_base 2
+java -jar target/QueueCTL-1.0-SNAPSHOT-shaded.jar config set priority_default 5
 
-# 2) Retry -> DLQ
-java -jar target/QueueCTL-1.0-SNAPSHOT.jar enqueue --command "bash -lc 'exit 1'" --id flakey --max_retries 2
-java -jar target/QueueCTL-1.0-SNAPSHOT.jar worker start --count 1
-java -jar target/QueueCTL-1.0-SNAPSHOT.jar dlq list
+# Enqueue
+java -jar target/QueueCTL-1.0-SNAPSHOT-shaded.jar enqueue --command "echo hello" --id job1
 
-# 3) Multi-worker (no overlap)
-java -jar target/QueueCTL-1.0-SNAPSHOT.jar enqueue --command "sleep 2 && echo A" --id a
-java -jar target/QueueCTL-1.0-SNAPSHOT.jar enqueue --command "sleep 2 && echo B" --id b
-java -jar target/QueueCTL-1.0-SNAPSHOT.jar worker start --count 2
+# Start workers
+java -jar target/QueueCTL-1.0-SNAPSHOT-shaded.jar worker start --count 2
 
-# 4) Persistence across restart
-# Jobs and config live under ~/.queuectl/queuectl.db
+# Status / Lists
+java -jar target/QueueCTL-1.0-SNAPSHOT-shaded.jar status
+java -jar target/QueueCTL-1.0-SNAPSHOT-shaded.jar list --state COMPLETED
+
+# DLQ roundtrip
+java -jar target/QueueCTL-1.0-SNAPSHOT-shaded.jar dlq list
+java -jar target/QueueCTL-1.0-SNAPSHOT-shaded.jar dlq retry <jobId>
+
+# Graceful stop for detached/daemonized workers
+java -jar target/QueueCTL-1.0-SNAPSHOT-shaded.jar worker stop
 ```
 
-## Troubleshooting
+Full CLI reference:
 
-- SQLite busy: we set a 5s busy timeout; try again if under heavy write.
-- macOS shell: commands run with `/bin/sh -c`. For Bash specifics, prefix with `bash -lc '...'`.
-- Java 21 toolchain warnings from Maven are safe; consider switching to `maven-compiler-plugin` `--release 21`.
+- enqueue — `--id`, `--command`, `--max_retries`, `--priority`, `--timeout`, `--run_at`
+- worker — `start --count N [--detached]`, `stop`, `daemon [--start|--stop|--status|--install-units]`, `logs [-f] [--worker-id ID]`
+- status — state counts and worker summary
+- list — `--state PENDING|PROCESSING|COMPLETED|DEAD`
+- dlq — `list`, `retry <jobId>`
+- config — `set <key> <value>`, `get <key>` (keys: `max_retries`, `backoff_base`, `timeout_default`, `priority_default`)
+
+## Documentation
+
+- Data directory: `~/.queuectl/` contains `queuectl.db` and per-worker logs under `logs/`.
+- Schema: `jobs`, `config`, `workers` (with heartbeats for status/visibility).
+- Claiming order: priority DESC, available_at ASC, created_at ASC.
+- States: PENDING → PROCESSING → COMPLETED or DEAD.
+- Scheduling: set both `run_at` and `available_at` to the future time.
+- Timeouts: worker enforces a hard wall clock timeout per job.
+- Web Server: start/stop via CLI (not covered in demo script by design).
+
+## Videos
+
+- Installation walkthrough: https://example.com/queuectl-install-video
+- CLI usage tour: https://example.com/queuectl-usage-video
+
+## Demo script
+
+There’s a curated demo that runs end-to-end in an isolated home directory (so it won’t touch your real data):
+
+```bash
+scripts/demo.sh
+```
+
+It builds if needed, configures defaults, enqueues a set of jobs, starts workers detached, demonstrates DLQ retry, and shuts down gracefully.
+
+## Notes for operators
+
+- Backup: the SQLite DB sits under `~/.queuectl/queuectl.db`. As always, stop writers before snapshots.
+- Concurrency: virtual-thread workers scale well; the bottleneck will be the work you run, not the queue.
+- Portability: runs on any Java 21+ runtime; Docker image provided.
 
 ## License
 
-MIT (for assignment/demo purposes)
+MIT

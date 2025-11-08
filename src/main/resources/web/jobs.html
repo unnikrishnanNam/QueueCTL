@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>QueueCTL • Jobs & Workers</title>
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <link rel="stylesheet" href="/assets/style.css" />
+  </head>
+  <body>
+    <div class="layout">
+      <aside class="sidebar">
+        <div class="nav-logo"><span>QC</span> QueueCTL</div>
+        <div class="nav-section">Navigation</div>
+        <nav>
+          <ul class="nav-links">
+            <li><a href="/">Dashboard</a></li>
+            <li><a class="active" href="/jobs">Jobs & Workers</a></li>
+            <li><a href="/logs">Logs</a></li>
+            <li><a href="/config">Config</a></li>
+          </ul>
+        </nav>
+      </aside>
+      <main>
+        <div class="topbar"><h1>Jobs & Workers</h1></div>
+        <div class="content">
+          <div class="card">
+            <h2>Jobs</h2>
+            <div class="actions">
+              <select id="stateFilter">
+                <option value="">All States</option>
+                <option>PENDING</option>
+                <option>PROCESSING</option>
+                <option>COMPLETED</option>
+                <option>DEAD</option>
+              </select>
+              <input
+                type="text"
+                id="jobSearch"
+                placeholder="Search (id or command)…"
+              />
+              <button id="refreshJobs">Refresh</button>
+            </div>
+            <div class="table-wrapper" style="max-height: 480px">
+              <table>
+                <thead>
+                  <tr>
+                    <th data-k="id">ID</th>
+                    <th data-k="state">State</th>
+                    <th data-k="attempts">Att/Max</th>
+                    <th data-k="priority">Prio</th>
+                    <th data-k="timeoutSeconds">Timeout</th>
+                    <th data-k="availableAt">Avail</th>
+                    <th data-k="command">Command</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody id="jobsBody"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="card" style="margin-top: 1rem">
+            <h2>Workers</h2>
+            <div class="table-wrapper" style="max-height: 480px">
+              <table>
+                <thead>
+                  <tr>
+                    <th data-k="workerId">ID</th>
+                    <th data-k="status">Status</th>
+                    <th data-k="lastHeartbeat">Heartbeat</th>
+                    <th data-k="startedAt">Started</th>
+                  </tr>
+                </thead>
+                <tbody id="workersBody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        <!-- footer intentionally removed -->
+      </main>
+    </div>
+    <script src="/assets/app.js"></script>
+    <script>
+      let jobsData = [];
+      let jobsSort = { key: null, asc: true };
+      async function loadJobs() {
+        let url = "/api/jobs?limit=300";
+        const sf = qs("#stateFilter").value;
+        if (sf) url += "&state=" + sf;
+        const jobs = await fetchJSON(url);
+        const q = (qs("#jobSearch").value || "").trim().toLowerCase();
+        jobsData = jobs.filter(
+          (j) =>
+            !q ||
+            j.id.toLowerCase().includes(q) ||
+            j.command.toLowerCase().includes(q)
+        );
+        renderJobs();
+      }
+      function renderJobs() {
+        let arr = [...jobsData];
+        const k = jobsSort.key;
+        const asc = jobsSort.asc;
+        if (k) {
+          arr.sort((a, b) => {
+            const va = a[k],
+              vb = b[k];
+            if (va == null && vb != null) return -1;
+            if (va != null && vb == null) return 1;
+            if (va == vb) return 0;
+            return (va > vb ? 1 : -1) * (asc ? 1 : -1);
+          });
+        }
+        qs("#jobsBody").innerHTML = arr
+          .map(
+            (j) => `<tr>
+    <td title="${j.id}">${j.id.slice(0, 8)}…</td>
+    <td>${badge(j.state)}</td>
+    <td>${j.attempts}/${j.maxRetries}</td>
+    <td>${j.priority}</td>
+    <td>${j.timeoutSeconds || 0}s</td>
+    <td>${j.availableAt || ""}</td>
+    <td title="${j.command}"><span class="cmd">${
+              j.command.length > 80 ? j.command.slice(0, 80) + "…" : j.command
+            }</span></td>
+    <td>${
+      j.state === "DEAD" ? `<button data-retry="${j.id}">Retry</button>` : ""
+    }</td>
+  </tr>`
+          )
+          .join("");
+      }
+      async function loadWorkers() {
+        const ws = await fetchJSON("/api/workers");
+        qs("#workersBody").innerHTML = ws
+          .map(
+            (w) => `<tr>
+    <td>${w.workerId}</td><td>${w.status}</td><td>${time(
+              w.lastHeartbeat
+            )}</td><td>${time(w.startedAt)}</td>
+  </tr>`
+          )
+          .join("");
+      }
+      qs("#refreshJobs").addEventListener("click", loadJobs);
+      qs("#stateFilter").addEventListener("change", loadJobs);
+      qs("#jobSearch").addEventListener("input", loadJobs);
+      qsa("th[data-k]").forEach((th) => {
+        th.addEventListener("click", () => {
+          const k = th.dataset.k;
+          jobsSort.asc = jobsSort.key === k ? !jobsSort.asc : true;
+          jobsSort.key = k;
+          renderJobs();
+        });
+      });
+      qs("#jobsBody").addEventListener("click", async (e) => {
+        const id = e.target.getAttribute("data-retry");
+        if (!id) return;
+        e.target.disabled = true;
+        try {
+          await fetchJSON("/api/dlq/retry?id=" + encodeURIComponent(id), {
+            method: "POST",
+          });
+          await loadJobs();
+        } finally {
+          e.target.disabled = false;
+        }
+      });
+      async function loop() {
+        try {
+          await loadJobs();
+          await loadWorkers();
+        } catch (e) {
+          console.error(e);
+        }
+      }
+      loop();
+      setInterval(loop, 4000);
+    </script>
+  </body>
+</html>
