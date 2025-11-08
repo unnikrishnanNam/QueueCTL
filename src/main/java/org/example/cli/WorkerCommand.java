@@ -51,8 +51,10 @@ public class WorkerCommand implements Runnable {
                             .getPath();
                     String userHome = System.getProperty("user.home");
                     String logsOut = Paths.get(Database.baseDir(), "worker.nohup.out").toString();
-                    // Preserve current user.home to keep DB/logs consistent when the demo overrides it
-                    String cmd = String.format("nohup java -Duser.home='%s' -jar '%s' worker start --count %d > %s 2>&1 & echo $!",
+                    // Preserve current user.home to keep DB/logs consistent when the demo overrides
+                    // it
+                    String cmd = String.format(
+                            "nohup java -Duser.home='%s' -jar '%s' worker start --count %d > %s 2>&1 & echo $!",
                             userHome, jar, count, logsOut);
                     ProcessBuilder pb = new ProcessBuilder("/bin/sh", "-c", cmd);
                     Process p = pb.start();
