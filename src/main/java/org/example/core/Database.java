@@ -36,6 +36,14 @@ public class Database {
             throw new RuntimeException("Failed to create DB directory", e);
         }
 
+        try {
+            Path logs = Paths.get(BASE_DIR, "logs");
+            if (!Files.exists(logs))
+                Files.createDirectories(logs);
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to create logs directory", e);
+        }
+
         try (Connection c = getConnection(); Statement s = c.createStatement()) {
             c.setAutoCommit(true);
 
@@ -48,6 +56,8 @@ public class Database {
                     "created_at INTEGER NOT NULL, " +
                     "updated_at INTEGER NOT NULL, " +
                     "available_at INTEGER NOT NULL, " +
+                    "run_at INTEGER, " +
+                    "timeout_seconds INTEGER NOT NULL DEFAULT 0, " +
                     "last_error TEXT, " +
                     "output TEXT, " +
                     "priority INTEGER NOT NULL, " +
@@ -56,8 +66,31 @@ public class Database {
                     ")");
 
             s.executeUpdate("CREATE TABLE IF NOT EXISTS config (key TEXT PRIMARY KEY, value TEXT)");
+
+            s.executeUpdate("CREATE TABLE IF NOT EXISTS workers (" +
+                    "worker_id TEXT PRIMARY KEY, " +
+                    "status TEXT NOT NULL, " +
+                    "last_heartbeat INTEGER NOT NULL, " +
+                    "started_at INTEGER NOT NULL" +
+                    ")");
         } catch (SQLException e) {
             throw new RuntimeException("Failed to initialize database", e);
+        }
+
+        // Migrations: add columns if missing
+        try (Connection c = getConnection(); Statement s = c.createStatement()) {
+            // run_at column
+            try {
+                s.executeUpdate("ALTER TABLE jobs ADD COLUMN run_at INTEGER");
+            } catch (SQLException ignore) {
+            }
+            // timeout_seconds column
+            try {
+                s.executeUpdate("ALTER TABLE jobs ADD COLUMN timeout_seconds INTEGER NOT NULL DEFAULT 0");
+            } catch (SQLException ignore) {
+            }
+        } catch (SQLException e) {
+            // ignore migration failures; columns may already exist
         }
     }
 
@@ -87,7 +120,8 @@ public class Database {
     public static void clearStop() {
         try {
             Path p = Paths.get(BASE_DIR, "stop.flag");
-            if (Files.exists(p)) Files.delete(p);
+            if (Files.exists(p))
+                Files.delete(p);
         } catch (Exception e) {
             // ignore
         }

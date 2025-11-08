@@ -16,7 +16,7 @@ public class JobRepository {
     }
 
     public void createJob(Job job) {
-        String sql = "INSERT INTO jobs (id, command, state, attempts, max_retries, created_at, updated_at, available_at, priority) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
+        String sql = "INSERT INTO jobs (id, command, state, attempts, max_retries, created_at, updated_at, available_at, priority, run_at, timeout_seconds) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
         try (Connection c = Database.getConnection(); PreparedStatement ps = c.prepareStatement(sql)) {
             long now = Instant.now().getEpochSecond();
             ps.setString(1, job.getId());
@@ -28,6 +28,12 @@ public class JobRepository {
             ps.setLong(7, now);
             ps.setLong(8, job.getAvailableAtEpoch());
             ps.setInt(9, job.getPriority());
+            if (job.getRunAtEpoch() == null) {
+                ps.setNull(10, Types.INTEGER);
+            } else {
+                ps.setLong(10, job.getRunAtEpoch());
+            }
+            ps.setInt(11, job.getTimeoutSeconds());
             ps.executeUpdate();
         } catch (SQLException e) {
             throw new RuntimeException("Failed to insert job", e);
@@ -38,7 +44,7 @@ public class JobRepository {
      * Atomically claim a pending job and return it, or null if none available.
      */
     public Job claimPendingJob(String workerId) {
-        String update = "UPDATE jobs SET state='PROCESSING', locked_by=?, locked_at=?, updated_at=? WHERE id = (SELECT id FROM jobs WHERE state='PENDING' AND available_at <= ? ORDER BY priority DESC, created_at LIMIT 1)";
+        String update = "UPDATE jobs SET state='PROCESSING', locked_by=?, locked_at=?, updated_at=? WHERE id = (SELECT id FROM jobs WHERE state='PENDING' AND available_at <= ? ORDER BY priority DESC, available_at ASC, created_at ASC LIMIT 1)";
         try (Connection c = Database.getConnection(); PreparedStatement ps = c.prepareStatement(update)) {
             long now = Instant.now().getEpochSecond();
             ps.setString(1, workerId);
@@ -49,7 +55,7 @@ public class JobRepository {
             if (affected == 0)
                 return null;
             // select the row with this worker/locked_at
-            String sel = "SELECT id,command,state,attempts,max_retries,created_at,updated_at,available_at,last_error,output,priority FROM jobs WHERE locked_by = ? AND locked_at = ? LIMIT 1";
+            String sel = "SELECT id,command,state,attempts,max_retries,created_at,updated_at,available_at,last_error,output,priority,run_at,timeout_seconds FROM jobs WHERE locked_by = ? AND locked_at = ? LIMIT 1";
             try (PreparedStatement ps2 = c.prepareStatement(sel)) {
                 ps2.setString(1, workerId);
                 ps2.setLong(2, now);
@@ -113,9 +119,9 @@ public class JobRepository {
         List<Job> out = new ArrayList<>();
         String sql;
         if (stateFilter == null)
-            sql = "SELECT id,command,state,attempts,max_retries,created_at,updated_at,available_at,last_error,output,priority FROM jobs ORDER BY created_at DESC";
+            sql = "SELECT id,command,state,attempts,max_retries,created_at,updated_at,available_at,last_error,output,priority,run_at,timeout_seconds FROM jobs ORDER BY created_at DESC";
         else
-            sql = "SELECT id,command,state,attempts,max_retries,created_at,updated_at,available_at,last_error,output,priority FROM jobs WHERE state = ? ORDER BY created_at DESC";
+            sql = "SELECT id,command,state,attempts,max_retries,created_at,updated_at,available_at,last_error,output,priority,run_at,timeout_seconds FROM jobs WHERE state = ? ORDER BY created_at DESC";
         try (Connection c = Database.getConnection(); PreparedStatement ps = c.prepareStatement(sql)) {
             if (stateFilter != null)
                 ps.setString(1, stateFilter.toUpperCase());
@@ -130,7 +136,7 @@ public class JobRepository {
     }
 
     public Job getJobById(String id) {
-        String sql = "SELECT id,command,state,attempts,max_retries,created_at,updated_at,available_at,last_error,output,priority FROM jobs WHERE id = ?";
+        String sql = "SELECT id,command,state,attempts,max_retries,created_at,updated_at,available_at,last_error,output,priority,run_at,timeout_seconds FROM jobs WHERE id = ?";
         try (Connection c = Database.getConnection(); PreparedStatement ps = c.prepareStatement(sql)) {
             ps.setString(1, id);
             try (ResultSet rs = ps.executeQuery()) {
@@ -197,6 +203,18 @@ public class JobRepository {
         j.setLastError(rs.getString("last_error"));
         j.setOutput(rs.getString("output"));
         j.setPriority(rs.getInt("priority"));
+        try {
+            long runAt = rs.getLong("run_at");
+            if (!rs.wasNull())
+                j.setRunAtEpoch(runAt);
+        } catch (SQLException ignored) {
+        }
+        try {
+            int timeout = rs.getInt("timeout_seconds");
+            if (!rs.wasNull())
+                j.setTimeoutSeconds(timeout);
+        } catch (SQLException ignored) {
+        }
         return j;
     }
 }

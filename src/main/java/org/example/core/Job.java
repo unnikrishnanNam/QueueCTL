@@ -11,9 +11,11 @@ public class Job {
     private Instant createdAt;
     private Instant updatedAt;
     private long availableAtEpoch; // epoch seconds when job becomes available
+    private Long runAtEpoch; // original scheduled run time (nullable)
     private int priority; // Higher value, more priority
     private String lastError;
     private String output;
+    private int timeoutSeconds; // 0 means no timeout
 
     public Job() {
     }
@@ -28,6 +30,7 @@ public class Job {
         this.updatedAt = this.createdAt;
         this.availableAtEpoch = Instant.now().getEpochSecond();
         this.priority = priority;
+        this.timeoutSeconds = 0;
     }
 
     // Getters and setters
@@ -95,6 +98,14 @@ public class Job {
         this.availableAtEpoch = availableAtEpoch;
     }
 
+    public Long getRunAtEpoch() {
+        return runAtEpoch;
+    }
+
+    public void setRunAtEpoch(Long runAtEpoch) {
+        this.runAtEpoch = runAtEpoch;
+    }
+
     public int getPriority() {
         return priority;
     }
@@ -119,6 +130,14 @@ public class Job {
         this.output = output;
     }
 
+    public int getTimeoutSeconds() {
+        return timeoutSeconds;
+    }
+
+    public void setTimeoutSeconds(int timeoutSeconds) {
+        this.timeoutSeconds = timeoutSeconds;
+    }
+
     @Override
     public String toString() {
         return "Job{" +
@@ -131,6 +150,7 @@ public class Job {
                 ", updatedAt=" + updatedAt +
                 ", availableAtEpoch=" + availableAtEpoch +
                 ", priority=" + priority +
+                ", timeoutSeconds=" + timeoutSeconds +
                 '}';
     }
 }
