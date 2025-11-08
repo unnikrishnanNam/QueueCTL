@@ -56,62 +56,57 @@ mvn -DskipTests package && java -jar target/QueueCTL-1.0-SNAPSHOT.jar status
 
 ### Option B: Docker
 
-# Configure defaults
-
-./bin/queuectl config set max_retries 3
-./bin/queuectl config set backoff_base 2
-./bin/queuectl config set priority_default 5
+```bash
+# Build image & prepare data dir
+docker build -t queuectl:latest .
+mkdir -p queuectl-data
 
 # Quick status
-
 docker run --rm -v $(pwd)/queuectl-data:/data queuectl:latest status
 
-# Enqueue & process (separate terminal/container for workers)
-
+# Enqueue & process (run workers in another terminal)
 docker run --rm -v $(pwd)/queuectl-data:/data queuectl:latest enqueue --command "echo from docker" --id d1
 docker run --rm -v $(pwd)/queuectl-data:/data queuectl:latest worker start --count 2
-
 ```
 
 Tip: the container uses `-Duser.home=/data` and exposes 8080; you can optionally run the web UI inside the container and publish that port.
 
 ## Usage (CLI)
 
+Make the wrapper executable once:
+
+```bash
+chmod +x ./bin/queuectl
 ```
 
-# Configure defaults
+Then:
 
-java -jar target/QueueCTL-1.0-SNAPSHOT-shaded.jar config set max_retries 3
-java -jar target/QueueCTL-1.0-SNAPSHOT-shaded.jar config set backoff_base 2
-java -jar target/QueueCTL-1.0-SNAPSHOT-shaded.jar config set priority_default 5
+```bash
+# Configure defaults
+./bin/queuectl config set max_retries 3
+./bin/queuectl config set backoff_base 2
+./bin/queuectl config set priority_default 5
 
 # Enqueue (success)
-
 ./bin/queuectl enqueue --command "echo hello" --id job1
 
 # Enqueue a failing job (will retry then DLQ)
-
 ./bin/queuectl enqueue --command "bash -lc 'exit 1'" --id fail-demo --max_retries 1
 
 # Start workers (foreground)
-
 ./bin/queuectl worker start --count 2
 
 # Status / Lists
-
 ./bin/queuectl status
 ./bin/queuectl list --state COMPLETED
 
 # DLQ roundtrip
-
 ./bin/queuectl dlq list
 ./bin/queuectl dlq retry fail-demo
 
 # Graceful stop for detached/daemonized workers
-
 ./bin/queuectl worker stop
-
-````
+```
 
 Full CLI reference:
 
@@ -144,7 +139,7 @@ There’s a curated demo that runs end-to-end in an isolated home directory (so 
 
 ```bash
 scripts/demo.sh
-````
+```
 
 It builds if needed, configures defaults, enqueues a set of jobs, starts workers detached, demonstrates DLQ retry, and shuts down gracefully.
 
