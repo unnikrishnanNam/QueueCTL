@@ -1,0 +1,21 @@
+#!/usr/bin/env zsh
+# Lightweight wrapper for QueueCTL
+# - Ensures jar is built
+# - Optional QUEUECTL_HOME env to override data dir (maps to user.home)
+# - Passes all arguments through
+
+set -euo pipefail
+ROOT_DIR=${0:A:h:h}
+# Shaded jar name in target after build (plugin replaces original)
+JAR="$ROOT_DIR/target/QueueCTL-1.0-SNAPSHOT.jar"
+
+if [[ ! -f "$JAR" ]]; then
+  echo "[queuectl] Building jar..." >&2
+  (cd "$ROOT_DIR" && mvn -q -DskipTests package)
+fi
+
+if [[ -n "${QUEUECTL_HOME:-}" ]]; then
+  exec java -Duser.home="$QUEUECTL_HOME" -jar "$JAR" "$@"
+else
+  exec java -jar "$JAR" "$@"
+fi

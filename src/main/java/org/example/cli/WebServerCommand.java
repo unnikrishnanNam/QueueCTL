@@ -53,10 +53,11 @@ public class WebServerCommand implements Runnable {
                     String jar = new java.io.File(
                             org.example.Main.class.getProtectionDomain().getCodeSource().getLocation().toURI())
                             .getPath();
+                    String userHome = System.getProperty("user.home");
                     String logsOut = Paths.get(Database.baseDir(), "webserver.nohup.out").toString();
                     String cmd = String.format(
-                            "nohup java -jar '%s' webserver start --port %d --foreground > %s 2>&1 & echo $!", jar,
-                            port, logsOut);
+                            "nohup java -Duser.home='%s' -jar '%s' webserver start --port %d --foreground > %s 2>&1 & echo $!",
+                            userHome, jar, port, logsOut);
                     ProcessBuilder pb = new ProcessBuilder("/bin/sh", "-c", cmd);
                     Process p = pb.start();
                     try (BufferedReader r = new BufferedReader(new InputStreamReader(p.getInputStream()))) {

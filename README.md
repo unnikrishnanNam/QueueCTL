@@ -47,28 +47,25 @@ Use it to offload long-running or failure-prone tasks, batch jobs, or small auto
 Requirements: Java 21+, Maven 3.9+
 
 ```bash
-# Build the shaded JAR
-mvn -DskipTests package
+# One-liner (build + run status)
+mvn -DskipTests package && java -jar target/QueueCTL-1.0-SNAPSHOT-shaded.jar status
 
-# Run a quick smoke test
-java -jar target/QueueCTL-1.0-SNAPSHOT-shaded.jar status
+# Or use the wrapper script (auto-builds if needed)
+./bin/queuectl status
 ```
 
 ### Option B: Docker
 
 ```bash
-# Build the image
+# Build image & create data dir
 docker build -t queuectl:latest .
+mkdir -p queuectl-data
 
-# Run it with a persistent data directory
-mkdir -p ./queuectl-data
-# Example: show status
+# Quick status
 docker run --rm -v $(pwd)/queuectl-data:/data queuectl:latest status
 
-# Enqueue a job
+# Enqueue & process (separate terminal/container for workers)
 docker run --rm -v $(pwd)/queuectl-data:/data queuectl:latest enqueue --command "echo from docker" --id d1
-
-# Start workers (foreground in container)
 docker run --rm -v $(pwd)/queuectl-data:/data queuectl:latest worker start --count 2
 ```
 
@@ -82,22 +79,25 @@ java -jar target/QueueCTL-1.0-SNAPSHOT-shaded.jar config set max_retries 3
 java -jar target/QueueCTL-1.0-SNAPSHOT-shaded.jar config set backoff_base 2
 java -jar target/QueueCTL-1.0-SNAPSHOT-shaded.jar config set priority_default 5
 
-# Enqueue
-java -jar target/QueueCTL-1.0-SNAPSHOT-shaded.jar enqueue --command "echo hello" --id job1
+# Enqueue (success)
+./bin/queuectl enqueue --command "echo hello" --id job1
 
-# Start workers
-java -jar target/QueueCTL-1.0-SNAPSHOT-shaded.jar worker start --count 2
+# Enqueue a failing job (will retry then DLQ)
+./bin/queuectl enqueue --command "bash -lc 'exit 1'" --id fail-demo --max_retries 1
+
+# Start workers (foreground)
+./bin/queuectl worker start --count 2
 
 # Status / Lists
-java -jar target/QueueCTL-1.0-SNAPSHOT-shaded.jar status
-java -jar target/QueueCTL-1.0-SNAPSHOT-shaded.jar list --state COMPLETED
+./bin/queuectl status
+./bin/queuectl list --state COMPLETED
 
 # DLQ roundtrip
-java -jar target/QueueCTL-1.0-SNAPSHOT-shaded.jar dlq list
-java -jar target/QueueCTL-1.0-SNAPSHOT-shaded.jar dlq retry <jobId>
+./bin/queuectl dlq list
+./bin/queuectl dlq retry fail-demo
 
 # Graceful stop for detached/daemonized workers
-java -jar target/QueueCTL-1.0-SNAPSHOT-shaded.jar worker stop
+./bin/queuectl worker stop
 ```
 
 Full CLI reference:
@@ -118,6 +118,7 @@ Full CLI reference:
 - Scheduling: set both `run_at` and `available_at` to the future time.
 - Timeouts: worker enforces a hard wall clock timeout per job.
 - Web Server: start/stop via CLI (not covered in demo script by design).
+- Web Server: start with `./bin/queuectl webserver start --port 8080 --foreground` or detach without `--foreground`. Stop via `./bin/queuectl webserver stop`. Status via `./bin/queuectl webserver status`.
 
 ## Videos
 
