@@ -48,7 +48,7 @@ Requirements: Java 21+, Maven 3.9+
 
 ```bash
 # One-liner (build + run status)
-mvn -DskipTests package && java -jar target/QueueCTL-1.0-SNAPSHOT-shaded.jar status
+mvn -DskipTests package && java -jar target/QueueCTL-1.0-SNAPSHOT.jar status
 
 # Or use the wrapper script (auto-builds if needed)
 ./bin/queuectl status
@@ -56,10 +56,10 @@ mvn -DskipTests package && java -jar target/QueueCTL-1.0-SNAPSHOT-shaded.jar sta
 
 ### Option B: Docker
 
-```bash
-# Build image & create data dir
-docker build -t queuectl:latest .
-mkdir -p queuectl-data
+ # Configure defaults
+./bin/queuectl config set max_retries 3
+./bin/queuectl config set backoff_base 2
+./bin/queuectl config set priority_default 5
 
 # Quick status
 docker run --rm -v $(pwd)/queuectl-data:/data queuectl:latest status
