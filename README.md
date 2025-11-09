@@ -19,9 +19,31 @@ QueueCTL is a CLI-first background job queue backed by SQLite with:
 - Exponential backoff retries and a clear Dead Letter Queue (DLQ)
 - Scheduling (run_at) and per-job timeouts
 - Always-on persistence under `~/.queuectl/`
-- Optional web dashboard (embedded HTTP server) for live metrics, jobs, workers, and logs
+- Interactive web dashboard (embedded HTTP server) for live metrics, jobs, workers, and logs
 
 Use it to offload long-running or failure-prone tasks, batch jobs, or small automation pipelines without dragging in a whole message broker.
+
+## Table of Contents
+
+- [QueueCTL](#queuectl)
+  - [What is this?](#what-is-this)
+  - [Table of Contents](#table-of-contents)
+  - [Why use QueueCTL?](#why-use-queuectl)
+  - [What we optimized for](#what-we-optimized-for)
+  - [Install](#install)
+    - [Option A: JAR](#option-a-jar)
+    - [Option B: Docker](#option-b-docker)
+  - [Usage (CLI)](#usage-cli)
+  - [Performance Monitor \& Dashboard](#performance-monitor--dashboard)
+    - [Features](#features)
+    - [API Endpoints (selected)](#api-endpoints-selected)
+    - [Screenshots (placeholders)](#screenshots-placeholders)
+  - [Sample CPU Spike Commands](#sample-cpu-spike-commands)
+  - [Documentation](#documentation)
+  - [Videos](#videos)
+  - [Demo script](#demo-script)
+  - [Notes for operators](#notes-for-operators)
+  - [License](#license)
 
 ## Why use QueueCTL?
 
@@ -117,6 +139,75 @@ Full CLI reference:
 - dlq — `list`, `retry <jobId>`
 - config — `set <key> <value>`, `get <key>` (keys: `max_retries`, `backoff_base`, `timeout_default`, `priority_default`)
 
+## Performance Monitor & Dashboard
+
+Start the embedded web UI:
+
+```bash
+./bin/queuectl webserver start --port 8080 --foreground   # in a dedicated terminal
+```
+
+Then visit: `http://localhost:8080`.
+
+### Features
+
+- Live state counters (Pending / Processing / Completed / Dead)
+- Worker summary (Idle / Busy / Total)
+- A unified CPU Load chart (0.0 – 1.0) showing all active workers as differently colored lines
+  - The scale is normalized to the JVM process. A single busy worker on a multi‑core machine may show ~0.05–0.20.
+  - Lines auto-smooth to reduce jitter; tiny idle noise is clamped.
+- Clickable legend pills: toggle visibility of individual worker lines
+- Legend shows current job ID and elapsed runtime seconds (or `idle`)
+- Adjustable refresh interval (2s / 5s / 10s / Pause)
+- Automatic pruning of stopped workers from the chart
+
+### API Endpoints (selected)
+
+- `GET /api/status` – job state counts & worker summary
+- `GET /api/jobs?state=COMPLETED&limit=100` – jobs listing
+- `GET /api/workers` – registered workers & heartbeats
+- `GET /api/workers/perf` – performance samples (heap history removed, now CPU + job metadata)
+- `GET /api/logs?worker=<id>&n=200` – tail logs
+
+### Screenshots (placeholders)
+
+| Overview                                                       | Jobs & Workers                                          | logs                                                 | Config                                                  |
+| -------------------------------------------------------------- | ------------------------------------------------------- | ---------------------------------------------------- | ------------------------------------------------------- |
+| ![Dashboard Overview](docs/screenshots/dashboard-overview.png) | ![CPU Load](docs/screenshots/jobs-workers-overview.png) | ![Legend Toggle](docs/screenshots/logs-overview.png) | ![Jobs & Workers](docs/screenshots/config-overview.png) |
+
+## Sample CPU Spike Commands
+
+Use these to visibly drive the CPU chart. Always set a timeout so jobs end predictably.
+
+```bash
+# 1. Tight busy loop for ~10s (simple, portable)
+./bin/queuectl enqueue --timeout 12 --command "awk 'BEGIN{t=systime()+10; while (systime()<t){ for(i=0;i<200000;i++); }}'"
+
+# 2. yes spam (one core) for ~15s
+./bin/queuectl enqueue --timeout 15 --command "(yes > /dev/null &) pid=$!; sleep 15; kill -9 $pid"
+
+# 3. OpenSSL SHA256 benchmark (~10s CPU hashing)
+./bin/queuectl enqueue --timeout 12 --command "openssl speed -seconds 10 sha256"
+
+# 4. Stream hashing 1GB zero data through sha256 (IO + CPU)
+./bin/queuectl enqueue --timeout 15 --command "dd if=/dev/zero bs=1m count=1024 2>/dev/null | shasum -a 256 >/dev/null"
+
+# 5. Fire multiple spikes (adjust count)
+for i in {1..4}; do ./bin/queuectl enqueue --timeout 12 --command "openssl speed -seconds 10 sha256"; done
+```
+
+Start several workers first to spread the load:
+
+```bash
+./bin/queuectl worker start --count 3 --detached
+```
+
+Interpretation tips:
+
+- The CPU metric is process-wide (0.0–1.0); on an 8‑core machine sustained full usage of one core will look like ~0.12–0.15.
+- Spikes < 0.02 are suppressed to 0 to keep the chart clean while idle.
+- Detaching workers + webserver isolates the dashboard from your terminal session.
+
 ## Documentation
 
 - Data directory: `~/.queuectl/` contains `queuectl.db` and per-worker logs under `logs/`.
@@ -127,6 +218,8 @@ Full CLI reference:
 - Timeouts: worker enforces a hard wall clock timeout per job.
 - Web Server: start/stop via CLI (not covered in demo script by design).
 - Web Server: start with `./bin/queuectl webserver start --port 8080 --foreground` or detach without `--foreground`. Stop via `./bin/queuectl webserver stop`. Status via `./bin/queuectl webserver status`.
+- Performance samples are persisted to `worker_perf` (SQLite) so the webserver can run in a separate process from the workers and still visualize history.
+- CPU chart uses an exponential moving average + clamping for readability; raw samples still stored.
 
 ## Videos
 
