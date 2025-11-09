@@ -43,7 +43,6 @@ Use it to offload long-running or failure-prone tasks, batch jobs, or small auto
   - [Videos](#videos)
   - [Demo script](#demo-script)
   - [Notes for operators](#notes-for-operators)
-  - [License](#license)
 
 ## Why use QueueCTL?
 
@@ -223,8 +222,8 @@ Interpretation tips:
 
 ## Videos
 
-- Installation walkthrough: https://example.com/queuectl-install-video
-- CLI usage tour: https://example.com/queuectl-usage-video
+- [Installation walkthrough](https://drive.google.com/file/d/1KOAOX1K90p6JPEgFtnSwC-86v_ep6m9r/view?usp=sharing)
+- [CLI usage tour](https://drive.google.com/file/d/1Ea_oPMtkCAaFdhbbpljMMmQt5BmpcruJ/view?usp=sharing)
 
 ## Demo script
 
@@ -241,7 +240,3 @@ It builds if needed, configures defaults, enqueues a set of jobs, starts workers
 - Backup: the SQLite DB sits under `~/.queuectl/queuectl.db`. As always, stop writers before snapshots.
 - Concurrency: virtual-thread workers scale well; the bottleneck will be the work you run, not the queue.
 - Portability: runs on any Java 21+ runtime; Docker image provided.
-
-## License
-
-MIT
