@@ -73,6 +73,17 @@ public class Database {
                     "last_heartbeat INTEGER NOT NULL, " +
                     "started_at INTEGER NOT NULL" +
                     ")");
+
+            // performance samples (kept lightweight; prune per worker)
+            s.executeUpdate("CREATE TABLE IF NOT EXISTS worker_perf (" +
+                    "id INTEGER PRIMARY KEY AUTOINCREMENT, " +
+                    "worker_id TEXT NOT NULL, " +
+                    "ts_ms INTEGER NOT NULL, " +
+                    "heap_used_bytes INTEGER NOT NULL, " +
+                    "cpu_load REAL NOT NULL, " +
+                    "last_job_duration_ms INTEGER" +
+                    ")");
+            s.executeUpdate("CREATE INDEX IF NOT EXISTS idx_worker_perf_worker_ts ON worker_perf(worker_id, ts_ms)");
         } catch (SQLException e) {
             throw new RuntimeException("Failed to initialize database", e);
         }
@@ -87,6 +98,19 @@ public class Database {
             // timeout_seconds column
             try {
                 s.executeUpdate("ALTER TABLE jobs ADD COLUMN timeout_seconds INTEGER NOT NULL DEFAULT 0");
+            } catch (SQLException ignore) {
+            }
+            // workers table: add current job & perf state columns if missing
+            try {
+                s.executeUpdate("ALTER TABLE workers ADD COLUMN current_job_id TEXT");
+            } catch (SQLException ignore) {
+            }
+            try {
+                s.executeUpdate("ALTER TABLE workers ADD COLUMN current_job_start_ms INTEGER");
+            } catch (SQLException ignore) {
+            }
+            try {
+                s.executeUpdate("ALTER TABLE workers ADD COLUMN last_finished_ms INTEGER");
             } catch (SQLException ignore) {
             }
         } catch (SQLException e) {

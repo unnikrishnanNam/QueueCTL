@@ -38,6 +38,8 @@ public class Worker implements Runnable {
                 registry.heartbeat(workerId, "IDLE");
                 Job job = repo.claimPendingJob(workerId);
                 if (job == null) {
+                    // periodic perf sample even when idle
+                    WorkerPerf.sample(workerId);
                     Thread.sleep(1000);
                     continue;
                 }
@@ -45,6 +47,9 @@ public class Worker implements Runnable {
                 if (produceStdout)
                     System.out.println("[" + workerId + "] Picked job: " + job.getId() + " cmd=" + job.getCommand());
                 long startMs = System.currentTimeMillis();
+                WorkerPerf.setCurrentJob(workerId, job.getId(), startMs);
+                // take an immediate sample at job start so charts update during BUSY
+                WorkerPerf.sample(workerId);
                 ProcessBuilder pb = new ProcessBuilder("/bin/sh", "-c", job.getCommand());
                 pb.redirectErrorStream(true);
                 Process p = pb.start();
@@ -62,11 +67,18 @@ public class Worker implements Runnable {
                 Integer exitCode = null;
                 int timeoutSec = job.getTimeoutSeconds();
                 long deadlineMs = timeoutSec > 0 ? startMs + timeoutSec * 1000L : Long.MAX_VALUE;
+                long lastPerfSampleMs = startMs;
                 while (exitCode == null) {
                     try {
                         exitCode = p.exitValue();
                     } catch (IllegalThreadStateException itse) {
                         // still running
+                    }
+                    // periodically sample perf while job is running so charts update in BUSY state
+                    long now = System.currentTimeMillis();
+                    if (now - lastPerfSampleMs >= 1000) {
+                        WorkerPerf.sample(workerId);
+                        lastPerfSampleMs = now;
                     }
                     if (System.currentTimeMillis() > deadlineMs) {
                         // timeout
@@ -85,6 +97,7 @@ public class Worker implements Runnable {
                 } catch (InterruptedException ignored) {
                 }
                 long durationSec = (System.currentTimeMillis() - startMs) / 1000;
+                WorkerPerf.finishJob(workerId, System.currentTimeMillis() - startMs);
                 String logEntry = String.format("[%s] job=%s state=%s attempts=%d duration=%ds\noutput:\n%s\n",
                         workerId, job.getId(),
                         (exitCode == 0 ? "COMPLETED" : (exitCode == -999 ? "TIMEOUT" : "FAILED")),
@@ -114,6 +127,7 @@ public class Worker implements Runnable {
                                 + (exitCode == -999 ? " (TIMEOUT)" : " exit=" + exitCode));
                 }
                 registry.heartbeat(workerId, "IDLE");
+                WorkerPerf.sample(workerId);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 break;

@@ -46,10 +46,10 @@
                   <tr>
                     <th data-k="id">ID</th>
                     <th data-k="state">State</th>
-                    <th data-k="attempts">Att/Max</th>
-                    <th data-k="priority">Prio</th>
-                    <th data-k="timeoutSeconds">Timeout</th>
-                    <th data-k="availableAt">Avail</th>
+                    <th data-k="attempts">Attempts</th>
+                    <th data-k="priority">Priority</th>
+                    <th data-k="timeoutSeconds">Timeout (s)</th>
+                    <th data-k="availableAt">Available</th>
                     <th data-k="command">Command</th>
                     <th></th>
                   </tr>
@@ -112,22 +112,28 @@
           });
         }
         qs("#jobsBody").innerHTML = arr
-          .map(
-            (j) => `<tr>
-    <td title="${j.id}">${j.id.slice(0, 8)}…</td>
+          .map((j) => {
+            const idShow = j.id.length <= 12 ? j.id : j.id.slice(0, 12) + "…";
+            const cmdShow =
+              j.command.length > 100
+                ? j.command.slice(0, 100) + "…"
+                : j.command;
+            const availStr = j.availableAt
+              ? new Date(j.availableAt * 1000).toLocaleString()
+              : "";
+            return `<tr>
+    <td title="${j.id}">${idShow}</td>
     <td>${badge(j.state)}</td>
     <td>${j.attempts}/${j.maxRetries}</td>
     <td>${j.priority}</td>
     <td>${j.timeoutSeconds || 0}s</td>
-    <td>${j.availableAt || ""}</td>
-    <td title="${j.command}"><span class="cmd">${
-              j.command.length > 80 ? j.command.slice(0, 80) + "…" : j.command
-            }</span></td>
+    <td title="${j.availableAt}">${availStr}</td>
+    <td title="${j.command}"><span class="cmd">${cmdShow}</span></td>
     <td>${
       j.state === "DEAD" ? `<button data-retry="${j.id}">Retry</button>` : ""
     }</td>
-  </tr>`
-          )
+  </tr>`;
+          })
           .join("");
       }
       async function loadWorkers() {

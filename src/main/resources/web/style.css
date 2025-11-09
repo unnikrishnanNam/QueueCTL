@@ -115,6 +115,8 @@ main {
   position: sticky;
   top: 0;
   backdrop-filter: blur(6px);
+  /* ensure the top bar stays above sticky table headers & cards */
+  z-index: 200;
 }
 .topbar h1 {
   margin: 0;
@@ -238,6 +240,8 @@ th {
   position: sticky;
   top: 0;
   cursor: pointer;
+  /* lower than topbar so it doesn't overlap */
+  z-index: 100;
 }
 tr:hover td {
   background: rgba(255, 255, 255, 0.02);

@@ -41,6 +41,7 @@ public class WebServer {
             server.createContext("/api/status", WebServer::handleStatus);
             server.createContext("/api/jobs", WebServer::handleJobs);
             server.createContext("/api/workers", WebServer::handleWorkers);
+            server.createContext("/api/workers/perf", WebServer::handleWorkersPerf);
             server.createContext("/api/logs", WebServer::handleLogs);
             server.createContext("/api/dlq/retry", WebServer::handleDlqRetry);
             server.createContext("/api/config/list", WebServer::handleConfigList);
@@ -171,6 +172,87 @@ public class WebServer {
             WorkerRegistry wr = new WorkerRegistry();
             List<WorkerRegistry.WorkerInfo> list = wr.list();
             byte[] bytes = gson.toJson(list).getBytes(StandardCharsets.UTF_8);
+            ex.sendResponseHeaders(200, bytes.length);
+            try (OutputStream os = ex.getResponseBody()) {
+                os.write(bytes);
+            }
+        } catch (Exception e) {
+            respondError(ex, e);
+        }
+    }
+
+    private static void handleWorkersPerf(HttpExchange ex) throws IOException {
+        try {
+            setJsonHeaders(ex);
+            // Read persisted performance samples so charts work across processes
+            WorkerRegistry wr = new WorkerRegistry();
+            Map<String, WorkerRegistry.WorkerInfo> info = new LinkedHashMap<>();
+            for (WorkerRegistry.WorkerInfo wi : wr.list())
+                info.put(wi.workerId(), wi);
+
+            // Query worker_perf samples per worker (already pruned to last MAX_SAMPLES)
+            Map<String, List<Map<String, Object>>> samplesPerWorker = new LinkedHashMap<>();
+            try (java.sql.Connection c = Database.getConnection();
+                    java.sql.PreparedStatement ps = c.prepareStatement(
+                            "SELECT worker_id, ts_ms, heap_used_bytes, cpu_load, last_job_duration_ms FROM worker_perf ORDER BY id")) {
+                try (java.sql.ResultSet rs = ps.executeQuery()) {
+                    while (rs.next()) {
+                        String wid = rs.getString("worker_id");
+                        samplesPerWorker.computeIfAbsent(wid, _k -> new ArrayList<>());
+                        Map<String, Object> row = new LinkedHashMap<>();
+                        row.put("ts", rs.getLong("ts_ms"));
+                        row.put("heap", rs.getLong("heap_used_bytes"));
+                        row.put("cpu", rs.getDouble("cpu_load"));
+                        long dur = rs.getLong("last_job_duration_ms");
+                        if (rs.wasNull())
+                            dur = -1;
+                        row.put("dur", dur);
+                        samplesPerWorker.get(wid).add(row);
+                    }
+                }
+            } catch (Exception ignored) {
+            }
+
+            List<Map<String, Object>> arr = new ArrayList<>();
+            for (String wid : info.keySet()) {
+                List<Map<String, Object>> rows = samplesPerWorker.getOrDefault(wid, List.of());
+                Map<String, Object> m = new LinkedHashMap<>();
+                WorkerRegistry.WorkerInfo wi = info.get(wid);
+                m.put("workerId", wid);
+                m.put("status", wi != null ? wi.status() : "UNKNOWN");
+                // include worker table job state columns if present
+                try (java.sql.Connection c = Database.getConnection();
+                        java.sql.PreparedStatement ps = c.prepareStatement(
+                                "SELECT current_job_id, current_job_start_ms, last_finished_ms FROM workers WHERE worker_id=?")) {
+                    ps.setString(1, wid);
+                    try (java.sql.ResultSet rs = ps.executeQuery()) {
+                        if (rs.next()) {
+                            m.put("currentJobId", rs.getString("current_job_id"));
+                            m.put("currentJobStartMs", rs.getLong("current_job_start_ms"));
+                            m.put("currentJobElapsedMs",
+                                    System.currentTimeMillis() - rs.getLong("current_job_start_ms"));
+                            m.put("lastFinishedMs", rs.getLong("last_finished_ms"));
+                        }
+                    }
+                } catch (Exception ignored) {
+                }
+                // Build histories for charts
+                List<Long> heapHist = new ArrayList<>();
+                List<Long> durHist = new ArrayList<>();
+                List<Double> cpuHist = new ArrayList<>();
+                for (Map<String, Object> r : rows) {
+                    heapHist.add((Long) r.get("heap"));
+                    cpuHist.add((Double) r.get("cpu"));
+                    long d = (Long) r.get("dur");
+                    if (d >= 0)
+                        durHist.add(d);
+                }
+                m.put("heapUsedHistory", heapHist);
+                m.put("jobDurationHistory", durHist);
+                m.put("cpuHistory", cpuHist);
+                arr.add(m);
+            }
+            byte[] bytes = gson.toJson(arr).getBytes(StandardCharsets.UTF_8);
             ex.sendResponseHeaders(200, bytes.length);
             try (OutputStream os = ex.getResponseBody()) {
                 os.write(bytes);
